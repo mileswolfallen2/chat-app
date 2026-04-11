@@ -189,20 +189,20 @@ io.on('connection', (socket) => {
   });
   
   socket.on('call-answer', (data) => {
-    const { to, answer, roomId } = data;
+    const { to, answer, roomId, from } = data;
     console.log(`Sending answer to ${to}`);
     const targetSocket = activeUsers.get(to);
     if (targetSocket) {
-      io.to(targetSocket).emit('call-answer', { answer, roomId });
+      io.to(targetSocket).emit('call-answer', { answer, roomId, from });
     }
   });
   
   socket.on('call-offer', (data) => {
-    const { to, offer, roomId } = data;
+    const { to, offer, roomId, from } = data;
     console.log(`Sending offer to ${to}`);
     const targetSocket = activeUsers.get(to);
     if (targetSocket) {
-      io.to(targetSocket).emit('call-offer', { offer, roomId });
+      io.to(targetSocket).emit('call-offer', { offer, roomId, from });
     }
   });
   

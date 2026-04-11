@@ -198,12 +198,11 @@
       });
       
       socket.on('message', (data) => {
-        if (currentRoomId === data.roomId) {
-          addMessage(data, data.senderId === currentUser.id);
+        if (currentRoomId === data.roomId && data.senderId !== currentUser.id) {
+          addMessage(data.content);
         }
       });
       
-      socket.on('call-incoming', handleIncomingCall);
       socket.on('call-offer', handleCallOffer);
       socket.on('call-answer', handleCallAnswer);
       socket.on('ice-candidate', handleIceCandidate);
@@ -247,7 +246,7 @@
       const res = await fetch(`${serverUrl}/api/messages/${currentRoomId}`);
       const { messages } = await res.json();
       messages.forEach(msg => {
-        addMessage(msg, msg.senderId === currentUser.id);
+        addMessage(msg.content, msg.senderId === currentUser.id);
       });
     }
     
@@ -258,7 +257,7 @@
       
       const data = { roomId: currentRoomId, senderId: currentUser.id, content };
       socket.emit('message', data);
-      addMessage(data, true);
+      addMessage(content, true);
       input.value = '';
     }
     
@@ -266,10 +265,10 @@
       if (e.key === 'Enter') sendMessage();
     });
     
-    function addMessage(data, isSent) {
+    function addMessage(content, isSent) {
       const div = document.createElement('div');
       div.className = `message ${isSent ? 'sent' : 'received'}`;
-      div.textContent = data.content;
+      div.textContent = content;
       document.getElementById('messages').appendChild(div);
       document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
     }
@@ -279,15 +278,20 @@
       startCallToUser(selectedUser.id);
     }
     
+    let callTargetId = null;
+    
     async function startCallToUser(userId) {
+      callTargetId = userId;
       currentRoomId = `call-${[currentUser.id, userId].sort().join('-')}`;
-      socket.emit('call-user', { from: currentUser.id, to: userId, roomId: currentRoomId });
-      initiateCall(true, userId);
+      await initiateCall(true, userId);
     }
     
     async function initiateCall(isInitiator, targetId) {
-      const config = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+      const config = { 
+        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] 
+      };
       peerConnection = new RTCPeerConnection(config);
+      callTargetId = targetId;
       
       peerConnection.onicecandidate = (e) => {
         if (e.candidate) {
@@ -296,7 +300,7 @@
       };
       
       peerConnection.ontrack = (e) => {
-        console.log('Received remote track');
+        console.log('Received remote track', e.streams[0]);
         document.getElementById('remoteVideo').srcObject = e.streams[0];
       };
       
@@ -314,51 +318,50 @@
       document.getElementById('callStatus').textContent = 'Connecting...';
       
       if (isInitiator) {
-        const offer = await peerConnection.createOffer();
+        const offer = await peerConnection.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true });
         await peerConnection.setLocalDescription(offer);
-        socket.emit('call-offer', { to: targetId, offer: offer, roomId: currentRoomId });
+        socket.emit('call-offer', { to: targetId, offer: peerConnection.localDescription, roomId: currentRoomId, from: currentUser.id });
         document.getElementById('callStatus').textContent = 'Calling...';
       }
     }
     
-    async function handleIncomingCall(data) {
-      console.log('Incoming call from', data.from);
-      incomingCallData = data;
-      document.getElementById('callerName').textContent = `User ${data.from}`;
-      document.getElementById('incomingCall').classList.add('show');
+    async function handleCallOffer(data) {
+      console.log('Received call offer', data);
       currentRoomId = data.roomId;
+      callTargetId = data.from;
+      incomingCallData = data;
+      
+      document.getElementById('callerName').textContent = 'Incoming call';
+      document.getElementById('incomingCall').classList.add('show');
     }
     
     async function acceptCall() {
       document.getElementById('incomingCall').classList.remove('show');
+      
       await initiateCall(false, incomingCallData.from);
       
-      if (incomingCallData.offer) {
-        await peerConnection.setRemoteDescription(new RTCSessionDescription(incomingCallData.offer));
-        const answer = await peerConnection.createAnswer();
-        await peerConnection.setLocalDescription(answer);
-        socket.emit('call-answer', { to: incomingCallData.from, answer: answer, roomId: currentRoomId });
-      }
+      await peerConnection.setRemoteDescription(new RTCSessionDescription(incomingCallData.offer));
+      
+      const answer = await peerConnection.createAnswer();
+      await peerConnection.setLocalDescription(answer);
+      socket.emit('call-answer', { to: incomingCallData.from, answer: peerConnection.localDescription, roomId: currentRoomId, from: currentUser.id });
+      
       document.getElementById('callStatus').textContent = 'Connected';
-    }
-    
-    function rejectCall() {
-      socket.emit('reject-call', { to: incomingCallData.from });
-      document.getElementById('incomingCall').classList.remove('show');
       incomingCallData = null;
     }
     
-    async function handleCallOffer(data) {
-      console.log('Received offer');
-      incomingCallData = data;
-      currentRoomId = data.roomId;
-      document.getElementById('incomingCall').classList.add('show');
-      document.getElementById('callerName').textContent = 'Incoming call';
+    function rejectCall() {
+      if (incomingCallData) {
+        socket.emit('reject-call', { to: incomingCallData.from });
+      }
+      document.getElementById('incomingCall').classList.remove('show');
+      endCall();
+      incomingCallData = null;
     }
     
     async function handleCallAnswer(data) {
-      console.log('Received answer');
-      if (peerConnection) {
+      console.log('Received call answer');
+      if (peerConnection && peerConnection.signalingState === 'have-local-offer') {
         await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
         document.getElementById('callStatus').textContent = 'Connected';
       }
@@ -374,7 +377,8 @@
     }
     
     async function handleIceCandidate(data) {
-      if (peerConnection && data.candidate) {
+      console.log('Received ICE candidate');
+      if (peerConnection) {
         try {
           await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
         } catch (err) {
@@ -399,6 +403,7 @@
         socket.emit('end-call', { roomId: currentRoomId });
       }
       currentRoomId = null;
+      callTargetId = null;
     }
   </script>
 </body>
