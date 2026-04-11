@@ -15,7 +15,7 @@ const io = new Server(server, {
 });
 
 const JWT_SECRET = 'chat-app-secret-key-2024';
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 6000;
 
 let db;
 
