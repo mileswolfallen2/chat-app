@@ -171,61 +171,60 @@ io.on('connection', (socket) => {
     saveDB();
     io.to(roomId).emit('message', data);
   });
-  
-  socket.on('call-request', (data) => {
-    const { roomId, from, to } = data;
-    socket.join(roomId);
-    
-    const targetSocket = activeUsers.get(to);
-    if (targetSocket) {
-      io.to(targetSocket.socket).emit('call-request', { roomId, from });
+
+  // WebRTC Signaling
+  socket.on('call-user', (data) => {
+    const { to, from, fromName, roomId, offer } = data;
+    const target = activeUsers.get(to);
+    if (target) {
+      io.to(target.socket).emit('call-incoming', { from, fromName, roomId, offer });
     }
   });
   
-  socket.on('call-accept', (data) => {
-    const { roomId, from } = data;
-    socket.join(roomId);
-    
-    const targetSocket = activeUsers.get(from);
-    if (targetSocket) {
-      io.to(targetSocket.socket).emit('call-accepted', { roomId });
+  socket.on('accept-call', (data) => {
+    const { to, roomId, answer } = data;
+    const target = activeUsers.get(to);
+    if (target) {
+      io.to(target.socket).emit('call-accepted', { roomId, answer });
     }
   });
   
-  socket.on('call-reject', (data) => {
-    const { roomId, from } = data;
-    const targetSocket = activeUsers.get(from);
-    if (targetSocket) {
-      io.to(targetSocket.socket).emit('call-rejected');
+  socket.on('reject-call', (data) => {
+    const { to, roomId } = data;
+    const target = activeUsers.get(to);
+    if (target) {
+      io.to(target.socket).emit('call-rejected', { roomId });
     }
   });
   
-  socket.on('video-frame', (data) => {
-    const { roomId, frame, from } = data;
-    socket.to(roomId).emit('video-frame', { frame, from });
-  });
-  
-  socket.on('toggle-video', (data) => {
-    const { roomId, enabled, from } = data;
-    socket.to(roomId).emit('toggle-video', { enabled, from });
-  });
-  
-  socket.on('toggle-audio', (data) => {
-    const { roomId, enabled, from } = data;
-    socket.to(roomId).emit('toggle-audio', { enabled, from });
-  });
-  
-  socket.on('screen-share', (data) => {
-    const { roomId, sharing, from } = data;
-    socket.to(roomId).emit('screen-share', { sharing, from });
+  socket.on('ice-candidate', (data) => {
+    const { to, roomId, candidate } = data;
+    const target = activeUsers.get(to);
+    if (target) {
+      io.to(target.socket).emit('ice-candidate', { roomId, candidate, from: socket.userId });
+    }
   });
   
   socket.on('end-call', (data) => {
     const { roomId } = data;
-    io.to(roomId).emit('user-left', { roomId });
-    io.to(roomId).emit('call-ended');
+    socket.to(roomId).emit('call-ended');
   });
   
+  socket.on('toggle-video', (data) => {
+    const { roomId, enabled, to } = data;
+    socket.to(roomId).emit('peer-toggle-video', { enabled });
+  });
+  
+  socket.on('toggle-audio', (data) => {
+    const { roomId, enabled, to } = data;
+    socket.to(roomId).emit('peer-toggle-audio', { enabled });
+  });
+  
+  socket.on('screen-share', (data) => {
+    const { roomId, sharing, to } = data;
+    socket.to(roomId).emit('peer-screen-share', { sharing });
+  });
+
   socket.on('disconnect', () => {
     if (socket.userId) {
       activeUsers.delete(socket.userId);
