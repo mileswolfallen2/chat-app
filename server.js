@@ -157,74 +157,73 @@ io.on('connection', (socket) => {
   console.log('Client connected:', socket.id);
   
   socket.on('register', (userId) => {
-    activeUsers.set(userId, socket.id);
+    activeUsers.set(userId, { socket: socket.id, displayName: '' });
     socket.userId = userId;
-    console.log(`User ${userId} registered with socket ${socket.id}`);
   });
   
   socket.on('join-room', (roomId) => {
     socket.join(roomId);
-    console.log(`Socket ${socket.id} joined room ${roomId}`);
-  });
-  
-  socket.on('leave-room', (roomId) => {
-    socket.leave(roomId);
   });
   
   socket.on('message', (data) => {
     const { roomId, senderId, content } = data;
-    console.log(`Message in room ${roomId}: ${content}`);
     db.run('INSERT INTO messages (senderId, roomId, content) VALUES (?, ?, ?)', [senderId, roomId, content]);
     saveDB();
     io.to(roomId).emit('message', data);
   });
   
-  socket.on('call-user', (data) => {
-    const { from, to, roomId } = data;
-    console.log(`Call from ${from} to ${to} in room ${roomId}`);
+  socket.on('call-request', (data) => {
+    const { roomId, from, to } = data;
+    socket.join(roomId);
+    
     const targetSocket = activeUsers.get(to);
     if (targetSocket) {
-      io.to(targetSocket).emit('call-incoming', { from, roomId });
+      io.to(targetSocket.socket).emit('call-request', { roomId, from });
     }
   });
   
-  socket.on('call-answer', (data) => {
-    const { to, answer, roomId, from } = data;
-    console.log(`Sending answer to ${to}`);
-    const targetSocket = activeUsers.get(to);
+  socket.on('call-accept', (data) => {
+    const { roomId, from } = data;
+    socket.join(roomId);
+    
+    const targetSocket = activeUsers.get(from);
     if (targetSocket) {
-      io.to(targetSocket).emit('call-answer', { answer, roomId, from });
+      io.to(targetSocket.socket).emit('call-accepted', { roomId });
     }
   });
   
-  socket.on('call-offer', (data) => {
-    const { to, offer, roomId, from } = data;
-    console.log(`Sending offer to ${to}`);
-    const targetSocket = activeUsers.get(to);
+  socket.on('call-reject', (data) => {
+    const { roomId, from } = data;
+    const targetSocket = activeUsers.get(from);
     if (targetSocket) {
-      io.to(targetSocket).emit('call-offer', { offer, roomId, from });
+      io.to(targetSocket.socket).emit('call-rejected');
     }
   });
   
-  socket.on('ice-candidate', (data) => {
-    const { to, candidate, roomId } = data;
-    const targetSocket = activeUsers.get(to);
-    if (targetSocket) {
-      io.to(targetSocket).emit('ice-candidate', { candidate, roomId });
-    }
+  socket.on('video-frame', (data) => {
+    const { roomId, frame, from } = data;
+    socket.to(roomId).emit('video-frame', { frame, from });
+  });
+  
+  socket.on('toggle-video', (data) => {
+    const { roomId, enabled, from } = data;
+    socket.to(roomId).emit('toggle-video', { enabled, from });
+  });
+  
+  socket.on('toggle-audio', (data) => {
+    const { roomId, enabled, from } = data;
+    socket.to(roomId).emit('toggle-audio', { enabled, from });
+  });
+  
+  socket.on('screen-share', (data) => {
+    const { roomId, sharing, from } = data;
+    socket.to(roomId).emit('screen-share', { sharing, from });
   });
   
   socket.on('end-call', (data) => {
     const { roomId } = data;
+    io.to(roomId).emit('user-left', { roomId });
     io.to(roomId).emit('call-ended');
-  });
-  
-  socket.on('reject-call', (data) => {
-    const { to } = data;
-    const targetSocket = activeUsers.get(to);
-    if (targetSocket) {
-      io.to(targetSocket).emit('call-rejected');
-    }
   });
   
   socket.on('disconnect', () => {
