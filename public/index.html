@@ -2,12 +2,38 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
   <title>Chat App</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     :root { --bg-dark: #313338; --bg-darker: #2b2d31; --bg-darkest: #1e1f22; --primary: #5865f2; --primary-hover: #4752c4; --text: #dbdee1; --text-muted: #949ba4; --hover: #3f4147; --accent: #f23f43; --success: #23a559; }
-    body { font-family: 'gg sans', 'Segoe UI', Tahoma, sans-serif; background: var(--bg-darkest); color: var(--text); height: 100vh; overflow: hidden; }
+    body { font-family: 'gg sans', 'Segoe UI', Tahoma, sans-serif; background: var(--bg-darkest); color: var(--text); height: 100vh; overflow: hidden; touch-action: manipulation; }
+    @media (max-width: 768px) {
+      body { flex-direction: column; }
+      .sidebar-left { width: 72px; }
+      .sidebar-header { display: none; }
+      .dm-header { display: none; }
+      .user-name { display: none; }
+      .user-item { padding: 8px; margin: 2px 4px; justify-content: center; }
+      .avatar-wrap { margin: 0; }
+      .avatar { width: 40px; height: 40px; font-size: 18px; }
+      .status-dot { width: 12px; height: 12px; border-width: 2px; }
+      .chat-header { padding: 12px; }
+      .chat-header h2 { font-size: 14px; }
+      .chat-header .username { display: none; }
+      .video-header-btn { padding: 8px 10px; font-size: 12px; }
+      .message-avatar { width: 32px; height: 32px; font-size: 12px; }
+      .message-group { gap: 10px; }
+      .message-header .name { font-size: 13px; }
+      .message-text { font-size: 14px; }
+      .video-box video { width: 160px; height: 120px; }
+      .call-controls { gap: 8px; }
+      .call-btn { padding: 10px 14px; font-size: 12px; }
+      .call-overlay { gap: 12px; }
+      .video-grid { gap: 10px; }
+    }
     
     .auth-screen { position: fixed; inset: 0; background: var(--bg-dark); display: flex; justify-content: center; align-items: center; z-index: 100; }
     .auth-box { background: var(--bg-darker); padding: 2rem; border-radius: 8px; width: 100%; max-width: 400px; text-align: center; }
@@ -200,8 +226,12 @@
     const rtcConfig = {
       iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' }
-      ]
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' },
+        { urls: 'stun:global.stun.twilio.com:3478' },
+        { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelay' }
+      ],
+      iceCandidatePoolSize: 10
     };
     
     async function login() {
@@ -357,8 +387,14 @@
       document.getElementById('callStatus').innerHTML = '<span class="status">Calling...</span>';
       document.getElementById('callOverlay').classList.add('show');
       
-      localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-      document.getElementById('localVideo').srcObject = localStream;
+      try {
+        localStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }, audio: { echoCancellation: true, noiseSuppression: true } });
+        document.getElementById('localVideo').srcObject = localStream;
+      } catch (err) {
+        console.error('Media error:', err);
+        endCall();
+        return;
+      }
       
       peerConnection = new RTCPeerConnection(rtcConfig);
       
@@ -378,7 +414,20 @@
         }
       };
       
-      const offer = await peerConnection.createOffer();
+      peerConnection.oniceconnectionstatechange = () => {
+        console.log('ICE state:', peerConnection.iceConnectionState);
+        if (peerConnection.iceConnectionState === 'connected') {
+          document.getElementById('callStatus').innerHTML = '<span class="connected">Connected</span>';
+        } else if (peerConnection.iceConnectionState === 'disconnected' || peerConnection.iceConnectionState === 'failed') {
+          document.getElementById('callStatus').innerHTML = '<span class="status">Connection failed. Retrying...</span>';
+        }
+      };
+      
+      peerConnection.onconnectionstatechange = () => {
+        console.log('Connection state:', peerConnection.connectionState);
+      };
+      
+      const offer = await peerConnection.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true });
       await peerConnection.setLocalDescription(offer);
       
       socket.emit('call-user', {
@@ -409,8 +458,14 @@
       document.getElementById('callStatus').innerHTML = '<span class="connected">Connected</span>';
       document.getElementById('callOverlay').classList.add('show');
       
-      localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-      document.getElementById('localVideo').srcObject = localStream;
+      try {
+        localStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }, audio: { echoCancellation: true, noiseSuppression: true } });
+        document.getElementById('localVideo').srcObject = localStream;
+      } catch (err) {
+        console.error('Media error:', err);
+        endCall();
+        return;
+      }
       
       peerConnection = new RTCPeerConnection(rtcConfig);
       
@@ -427,6 +482,15 @@
             roomId: currentRoomId,
             candidate: event.candidate
           });
+        }
+      };
+      
+      peerConnection.oniceconnectionstatechange = () => {
+        console.log('ICE state:', peerConnection.iceConnectionState);
+        if (peerConnection.iceConnectionState === 'connected') {
+          document.getElementById('callStatus').innerHTML = '<span class="connected">Connected</span>';
+        } else if (peerConnection.iceConnectionState === 'disconnected' || peerConnection.iceConnectionState === 'failed') {
+          document.getElementById('callStatus').innerHTML = '<span class="status">Connection failed. Retrying...</span>';
         }
       };
       
