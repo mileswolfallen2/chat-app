@@ -174,19 +174,34 @@ io.on('connection', (socket) => {
 
   // WebRTC Signaling
   socket.on('call-user', (data) => {
-    const { to, from, fromName, roomId, offer } = data;
+    const { to, from, fromName, roomId, offer, mode } = data;
     const target = activeUsers.get(to);
     if (target) {
-      io.to(target.socket).emit('call-incoming', { from, fromName, roomId, offer });
+      io.to(target.socket).emit('call-incoming', { from, fromName, roomId, offer, mode });
+      if (mode === 'server') {
+        socket.join(roomId);
+        io.to(target.socket).join(roomId);
+        io.to(roomId).emit('server-connected');
+      }
     }
   });
   
   socket.on('accept-call', (data) => {
-    const { to, roomId, answer } = data;
+    const { to, roomId, answer, mode } = data;
     const target = activeUsers.get(to);
     if (target) {
+      if (mode === 'server') {
+        socket.join(roomId);
+        io.to(target.socket).join(roomId);
+        io.to(roomId).emit('server-connected');
+      }
       io.to(target.socket).emit('call-accepted', { roomId, answer });
     }
+  });
+  
+  socket.on('video-frame', (data) => {
+    const { roomId, frame } = data;
+    socket.to(roomId).emit('video-frame', { frame });
   });
   
   socket.on('reject-call', (data) => {
