@@ -202,10 +202,10 @@
           <div class="username" id="chatUsername">@username</div>
         </div>
         <button class="video-header-btn" id="videoHeaderBtn" onclick="showCallOptions()">📹 Call</button>
-      <div id="callOptions" class="call-options">
-        <button onclick="startCallP2P()">📹 Direct (P2P)</button>
-        <button onclick="startCallServer()">🌐 Server Relay</button>
-      </div>
+        <div id="callOptions" class="call-options">
+          <button onclick="startCallP2P()">📹 Direct (P2P)</button>
+          <button onclick="startCallServer()">🌐 Server Relay</button>
+        </div>
       </div>
       <div class="messages" id="messages">
         <div class="no-chat" id="noChat">
@@ -442,9 +442,16 @@
     }
     document.getElementById('msgInput').addEventListener('keypress', (e) => { if (e.key === 'Enter') sendMessage(); });
     
-    function showCallOptions() {
+    function showCallOptions(e) {
+      e.stopPropagation();
       document.getElementById('callOptions').classList.toggle('show');
     }
+    
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('.call-options') && !e.target.closest('#videoHeaderBtn')) {
+        document.getElementById('callOptions').classList.remove('show');
+      }
+    });
     
     function startCallP2P() {
       document.getElementById('callOptions').classList.remove('show');
