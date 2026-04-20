@@ -123,8 +123,18 @@ app.post('/api/logout', (req, res) => {
   res.json({ success: true });
 });
 
-app.get('/api/me', authMiddleware, (req, res) => {
-  res.json({ user: req.user });
+app.get('/api/me', (req, res) => {
+  const token = req.session.token || req.headers.authorization?.split(' ')[1];
+  if (!token) {
+    return res.json({ user: null });
+  }
+
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    return res.json({ user: decoded });
+  } catch (err) {
+    return res.json({ user: null });
+  }
 });
 
 app.get('/api/users', authMiddleware, (req, res) => {
