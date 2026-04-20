@@ -11,10 +11,11 @@
     * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
     :root { --bg-dark: #313338; --bg-darker: #2b2d31; --bg-darkest: #1e1f22; --primary: #5865f2; --primary-hover: #4752c4; --text: #dbdee1; --text-muted: #949ba4; --hover: #3f4147; --accent: #f23f43; --success: #23a559; }
     html, body { height: 100%; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg-darkest); color: var(--text); overflow: hidden; touch-action: manipulation; position: fixed; inset: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg-darkest); color: var(--text); overflow: hidden; touch-action: manipulation; min-height: 100dvh; }
     
     @media (max-width: 768px) {
-      .app { flex-direction: row-reverse !important; }
+      body { min-height: 100dvh; overflow: hidden; }
+      .app { flex-direction: row-reverse !important; height: 100dvh; }
       .sidebar-left { 
         width: 64px; 
         position: absolute;
@@ -28,7 +29,10 @@
         overflow-y: hidden;
         padding: 4px;
       }
-      .sidebar-header, .dm-header { display: none; }
+      .sidebar-header, .dm-header, .sidebar-footer { display: none; }
+      .app-toolbar { padding: calc(env(safe-area-inset-top, 0px) + 12px) 12px 12px; }
+      .app-toolbar .app-meta { min-width: 0; }
+      .app-toolbar .app-user { max-width: 120px; }
       .user-list { 
         display: flex; 
         flex-direction: row; 
@@ -45,16 +49,16 @@
       .user-name { display: block; font-size: 10px; text-align: center; }
       .avatar { width: 36px; height: 36px; font-size: 14px; }
       .status-dot { width: 10px; height: 10px; border: 2px solid var(--bg-darker); }
-      .chat-area { height: calc(100% - 64px); }
+      .chat-area { height: calc(100% - 64px); padding-bottom: env(safe-area-inset-bottom, 0px); }
       .chat-header { padding: 12px; }
       .chat-header h2 { font-size: 15px; }
-      .video-header-btn { padding: 6px 10px; font-size: 12px; }
+      .video-header-btn, .logout-btn { padding: 8px 10px; font-size: 12px; }
       .messages { padding: 12px; flex: 1; overflow-y: auto; }
       .message-group { gap: 10px; }
       .message-avatar { width: 32px; height: 32px; font-size: 12px; }
       .message-header .name { font-size: 13px; }
       .message-text { font-size: 15px; }
-      .message-input { padding: 10px; }
+      .message-input { padding: 10px 10px calc(env(safe-area-inset-bottom, 0px) + 10px); }
       .message-input input { padding: 14px 16px; font-size: 16px; }
       .auth-box { margin: 16px; padding: 24px; }
       .call-overlay { padding: 20px; }
@@ -78,10 +82,14 @@
     .auth-box .switch:hover { text-decoration: underline; }
     .error { color: var(--accent); font-size: 13px; margin-bottom: 8px; display: none; }
     
-    .app { display: none; height: 100%; display: flex; }
+    .app { display: none; height: 100dvh; }
     .sidebar-left { width: 240px; background: var(--bg-darker); display: flex; flex-direction: column; flex-shrink: 0; }
     .sidebar-header { padding: 16px; border-bottom: 1px solid #1e1f22; font-weight: 600; }
     .dm-header { padding: 12px 16px; font-size: 12px; font-weight: 600; text-transform: uppercase; color: var(--text-muted); }
+    .sidebar-footer { padding: 12px 16px; border-top: 1px solid #1e1f22; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .sidebar-footer .current-user { min-width: 0; }
+    .sidebar-footer .label { color: var(--text-muted); font-size: 12px; }
+    .sidebar-footer .name { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .user-list { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
     .user-item { padding: 8px 12px; margin: 2px 8px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; gap: 10px; min-height: 44px; -webkit-tap-highlight-color: var(--hover); position: relative; }
     .user-item:hover { background: var(--hover); }
@@ -98,11 +106,17 @@
     }
     
     .chat-area { flex: 1; background: var(--bg-dark); display: flex; flex-direction: column; min-width: 0; }
+    .app-toolbar { padding: 12px 16px; border-bottom: 1px solid #26272d; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-shrink: 0; background: rgba(30,31,34,0.92); backdrop-filter: blur(10px); }
+    .app-toolbar .app-meta { min-width: 0; }
+    .app-toolbar .app-title { font-size: 15px; font-weight: 700; }
+    .app-toolbar .app-user { font-size: 13px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .chat-header { padding: 16px; border-bottom: 1px solid #26272d; display: flex; align-items: center; gap: 10px; flex-shrink: 0; position: relative; }
     .chat-header h2 { font-size: 16px; font-weight: 600; }
     .chat-header .username { color: var(--text-muted); font-size: 14px; }
     .video-header-btn { margin-left: auto; background: var(--success); color: white; padding: 10px 16px; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 600; display: none; -webkit-tap-highlight-color: #1c6b42; position: relative; }
     .video-header-btn:hover { background: #1c6b42; }
+    .logout-btn { background: transparent; color: var(--text); border: 1px solid #4f545c; padding: 10px 14px; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 600; flex-shrink: 0; }
+    .logout-btn:hover { background: var(--hover); }
     .call-options { position: absolute; right: 16px; top: 100%; background: var(--bg-darker); border-radius: 8px; display: none; flex-direction: column; z-index: 50; box-shadow: 0 4px 16px rgba(0,0,0,0.3); }
     .call-options.show { display: flex; }
     .call-options button { padding: 12px 16px; background: transparent; border: none; color: var(--text); font-size: 14px; cursor: pointer; text-align: left; }
@@ -190,8 +204,22 @@
       <div class="sidebar-header">Chat App</div>
       <div class="dm-header">Direct Messages</div>
       <div class="user-list" id="userList"></div>
+      <div class="sidebar-footer">
+        <div class="current-user">
+          <div class="label">Logged in as</div>
+          <div class="name" id="sidebarCurrentUser">User</div>
+        </div>
+        <button class="logout-btn" onclick="logout()">Logout</button>
+      </div>
     </div>
     <div class="chat-area">
+      <div class="app-toolbar">
+        <div class="app-meta">
+          <div class="app-title">Chat App</div>
+          <div class="app-user" id="appCurrentUser">@user</div>
+        </div>
+        <button class="logout-btn" onclick="logout()">Logout</button>
+      </div>
       <div class="chat-header" id="chatHeader" style="display:none;">
         <div class="avatar-wrap">
           <div class="avatar" id="chatAvatar"></div>
@@ -278,19 +306,50 @@
     let pendingIceCandidates = [];
     const serverUrl = window.location.origin;
     
+    const turnCredentials = {
+      username: 'openrelayproject',
+      credential: 'openrelay'
+    };
+
+    const turnIceServers = [
+      {
+        urls: [
+          'turn:openrelay.metered.ca:80?transport=udp',
+          'turn:openrelay.metered.ca:80?transport=tcp',
+          'turn:openrelay.metered.ca:443?transport=tcp',
+          'turns:openrelay.metered.ca:443?transport=tcp'
+        ],
+        ...turnCredentials
+      }
+    ];
+
     const rtcConfig = {
       iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' },
         { urls: 'stun:stun2.l.google.com:19302' },
         { urls: 'stun:global.stun.twilio.com:3478' },
-        { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelay' }
+        ...turnIceServers
       ],
       iceCandidatePoolSize: 10
     };
+
+    const relayRtcConfig = {
+      iceServers: turnIceServers,
+      iceTransportPolicy: 'relay',
+      iceCandidatePoolSize: 10
+    };
     
+    async function apiFetch(url, options = {}) {
+      const res = await fetch(url, options);
+      if (res.status === 401 && currentUser) {
+        await logout(false);
+      }
+      return res;
+    }
+
     async function login() {
-      const res = await fetch(`${serverUrl}/api/login`, {
+      const res = await apiFetch(`${serverUrl}/api/login`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username: document.getElementById('loginUsername').value, password: document.getElementById('loginPassword').value })
       });
@@ -300,7 +359,7 @@
     }
     
     async function register() {
-      const res = await fetch(`${serverUrl}/api/register`, {
+      const res = await apiFetch(`${serverUrl}/api/register`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username: document.getElementById('regUsername').value, password: document.getElementById('regPassword').value, displayName: document.getElementById('regDisplayName').value })
       });
@@ -316,25 +375,36 @@
     async function initApp() {
       document.getElementById('authScreen').style.display = 'none';
       document.getElementById('app').style.display = 'flex';
+      document.getElementById('sidebarCurrentUser').textContent = currentUser.displayName;
+      document.getElementById('appCurrentUser').textContent = `@${currentUser.username}`;
       
-      socket = io();
-      socket.on('connect', () => socket.emit('register', currentUser.id));
-      socket.on('message', (data) => { if (currentRoomId && currentRoomId === data.roomId && data.senderId !== currentUser.id) addMessage(data.content, data.senderId); });
-      
-      socket.on('call-incoming', handleIncomingCall);
-      socket.on('call-accepted', handleCallAccepted);
-      socket.on('call-rejected', handleCallRejected);
-      socket.on('call-ended', handleCallEnded);
-      socket.on('ice-candidate', handleIceCandidate);
-      socket.on('peer-toggle-video', handlePeerToggleVideo);
-      socket.on('peer-toggle-audio', handlePeerToggleAudio);
-      socket.on('peer-screen-share', handlePeerScreenShare);
+      if (!socket) {
+        socket = io();
+        socket.on('connect', () => {
+          if (currentUser) {
+            socket.emit('register', currentUser.id);
+          }
+        });
+        socket.on('message', (data) => { if (currentRoomId && currentRoomId === data.roomId && data.senderId !== currentUser.id) addMessage(data.content, data.senderId); });
+        
+        socket.on('call-incoming', handleIncomingCall);
+        socket.on('call-accepted', handleCallAccepted);
+        socket.on('call-rejected', handleCallRejected);
+        socket.on('call-ended', handleCallEnded);
+        socket.on('ice-candidate', handleIceCandidate);
+        socket.on('peer-toggle-video', handlePeerToggleVideo);
+        socket.on('peer-toggle-audio', handlePeerToggleAudio);
+        socket.on('peer-screen-share', handlePeerScreenShare);
+      } else if (socket.connected) {
+        socket.emit('register', currentUser.id);
+      }
       
       loadUsers();
     }
     
     async function loadUsers() {
-      const res = await fetch(`${serverUrl}/api/users`);
+      const res = await apiFetch(`${serverUrl}/api/users`);
+      if (!res.ok) return;
       const { users } = await res.json();
       document.getElementById('userList').innerHTML = users.map(u => `
         <div class="user-item" onclick="selectUser(event, ${u.id}, '${u.displayName}', '${u.username}')">
@@ -361,7 +431,8 @@
       currentRoomId = [currentUser.id, userId].sort().join('-').toString();
       socket.emit('join-room', currentRoomId);
       document.getElementById('messages').innerHTML = '';
-      const res = await fetch(`${serverUrl}/api/messages/${currentRoomId}`);
+      const res = await apiFetch(`${serverUrl}/api/messages/${currentRoomId}`);
+      if (!res.ok) return;
       const { messages } = await res.json();
       let lastSender = null;
       messages.forEach(msg => {
@@ -480,7 +551,7 @@
       
       createPeerConnection(userId);
       const offer = await peerConnection.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true });
-      await peerConnection.setLocalDescription(offer);
+      await setLocalDescriptionAndGatherIce(peerConnection, offer, true);
       
       socket.emit('call-user', {
         to: userId,
@@ -515,7 +586,7 @@
       createPeerConnection(userId);
       
       const offer = await peerConnection.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true });
-      await peerConnection.setLocalDescription(offer);
+      await setLocalDescriptionAndGatherIce(peerConnection, offer, false);
       
       socket.emit('call-user', {
         to: userId,
@@ -562,7 +633,7 @@
       await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
       await flushPendingIceCandidates();
       const answer = await peerConnection.createAnswer();
-      await peerConnection.setLocalDescription(answer);
+      await setLocalDescriptionAndGatherIce(peerConnection, answer, callMode === 'server');
       
       socket.emit('accept-call', {
         to: from,
@@ -729,9 +800,7 @@
         peerConnection.close();
       }
 
-      const config = callMode === 'server'
-        ? { ...rtcConfig, iceTransportPolicy: 'relay' }
-        : rtcConfig;
+      const config = callMode === 'server' ? relayRtcConfig : rtcConfig;
 
       peerConnection = new RTCPeerConnection(config);
 
@@ -758,7 +827,9 @@
         } else if (peerConnection.iceConnectionState === 'disconnected') {
           document.getElementById('callStatus').innerHTML = '<span class="status">Reconnecting...</span>';
         } else if (peerConnection.iceConnectionState === 'failed') {
-          document.getElementById('callStatus').innerHTML = '<span class="status">Connection failed</span>';
+          document.getElementById('callStatus').innerHTML = callMode === 'server'
+            ? '<span class="status">Relay connection failed</span>'
+            : '<span class="status">Connection failed</span>';
         }
       };
 
@@ -776,6 +847,36 @@
         const candidate = pendingIceCandidates.shift();
         await peerConnection.addIceCandidate(candidate);
       }
+    }
+
+    async function setLocalDescriptionAndGatherIce(connection, description, preferRelay) {
+      await connection.setLocalDescription(description);
+
+      if (connection.iceGatheringState === 'complete') {
+        return;
+      }
+
+      await new Promise((resolve) => {
+        let resolved = false;
+        const timeoutMs = preferRelay ? 3000 : 1200;
+        const timer = setTimeout(finish, timeoutMs);
+
+        function finish() {
+          if (resolved) return;
+          resolved = true;
+          clearTimeout(timer);
+          connection.removeEventListener('icegatheringstatechange', onChange);
+          resolve();
+        }
+
+        function onChange() {
+          if (connection.iceGatheringState === 'complete') {
+            finish();
+          }
+        }
+
+        connection.addEventListener('icegatheringstatechange', onChange);
+      });
     }
 
     function cleanupCall(notifyPeer) {
@@ -816,6 +917,48 @@
       activeCallPeerId = null;
       incomingCallData = null;
     }
+
+    async function restoreSession() {
+      const res = await fetch(`${serverUrl}/api/me`);
+      if (!res.ok) {
+        return;
+      }
+
+      const data = await res.json();
+      if (data.user) {
+        currentUser = data.user;
+        initApp();
+      }
+    }
+
+    async function logout(shouldCallServer = true) {
+      if (shouldCallServer) {
+        try {
+          await fetch(`${serverUrl}/api/logout`, { method: 'POST' });
+        } catch (err) {
+          console.error('Logout error:', err);
+        }
+      }
+
+      if (socket) {
+        socket.disconnect();
+        socket = null;
+      }
+
+      cleanupCall(false);
+      currentUser = null;
+      selectedUser = null;
+      currentRoomId = '';
+      document.getElementById('messages').innerHTML = '<div class="no-chat" id="noChat"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M5.88657 21.5C5.38747 21.5 4.95609 21.3 4.61039 20.95L4.61039 20.95C4.26469 20.6042 4.06469 20.1728 4.01039 19.6558C3.95609 19.1388 3.94679 18.4756 3.98239 17.6662L4.00039 17.6662L4.00039 17.6662C4.036 16.8568 4.0961 16.1936 4.18076 15.6766C4.26542 15.1596 4.46725 14.7282 4.78625 14.3825C5.10525 14.0367 5.54114 13.8367 6.09394 13.7823L6.09394 13.7823C6.64674 13.7279 7.23214 13.7322 7.85014 13.7951C8.46814 13.858 9.03494 14.0439 9.55064 14.3528C10.0663 14.6618 10.4552 15.1275 10.7172 15.75L10.7172 15.75L10.7172 15.75C10.9792 16.3725 11.1101 17.1275 11.1101 18.015V18.015C11.1101 19.9185 10.5605 21.472 9.46126 22.6761C8.36206 23.8801 6.74763 24.5 5.88657 24.5V21.5ZM14.5 23C14.5 23 14.5 23 14.5 23V23C13.4 23 12.3933 22.7419 11.4801 22.2257C10.5668 21.7094 9.83836 21.0239 9.29481 20.1692C8.75126 19.3144 8.47949 18.3715 8.47949 17.3404V17.3404C8.47949 15.8054 8.86595 14.4932 9.63888 13.4038C10.4118 12.3144 11.4796 11.5 12.8422 10.9614L12.8422 10.9614C13.4238 10.6758 14.0554 10.536 14.7361 10.5419V10.5419C15.4168 10.5479 16.0421 10.6876 16.6118 10.9612C16.6118 10.9612 16.6118 10.9612 16.6118 10.9612C18.0069 11.4984 19.108 12.3371 19.9155 13.4772C20.7231 14.6173 21.127 15.9742 21.127 17.548V17.548C21.127 18.5937 20.8569 19.5476 20.3167 20.4096C19.7765 21.2717 19.0449 21.9603 18.1218 22.4755C17.1988 22.9907 16.1616 23.2495 15.01 23.252L14.5 23ZM11.4305 0.5L19.3219 4.5L19.3219 9.5L15.5219 11L15.5219 16L19.3219 17.5L19.3219 22.5L11.4305 22.5C9.01252 22.5 6.87028 21.6645 5.00378 19.9935C3.13728 18.3224 2.00065 16.0998 2.00065 13.326C2.00065 10.5522 3.13728 8.32961 5.00378 6.65856C6.87028 5.98751 9.01252 5.5 11.4305 5.5V0.5Z"/></svg><div>Select a user to start chatting</div></div>';
+      document.getElementById('userList').innerHTML = '';
+      document.getElementById('chatHeader').style.display = 'none';
+      document.getElementById('messageInput').style.display = 'none';
+      document.getElementById('app').style.display = 'none';
+      document.getElementById('authScreen').style.display = 'flex';
+      showLogin();
+    }
+
+    restoreSession();
   </script>
 </body>
 </html>
