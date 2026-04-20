@@ -98,7 +98,7 @@
     }
     
     .chat-area { flex: 1; background: var(--bg-dark); display: flex; flex-direction: column; min-width: 0; }
-    .chat-header { padding: 16px; border-bottom: 1px solid #26272d; display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+    .chat-header { padding: 16px; border-bottom: 1px solid #26272d; display: flex; align-items: center; gap: 10px; flex-shrink: 0; position: relative; }
     .chat-header h2 { font-size: 16px; font-weight: 600; }
     .chat-header .username { color: var(--text-muted); font-size: 14px; }
     .video-header-btn { margin-left: auto; background: var(--success); color: white; padding: 10px 16px; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 600; display: none; -webkit-tap-highlight-color: #1c6b42; position: relative; }
@@ -201,7 +201,7 @@
           <h2 id="chatTitle">User</h2>
           <div class="username" id="chatUsername">@username</div>
         </div>
-        <button class="video-header-btn" id="videoHeaderBtn" onclick="showCallOptions()">📹 Call</button>
+        <button class="video-header-btn" id="videoHeaderBtn" onclick="showCallOptions(event)">📹 Call</button>
         <div id="callOptions" class="call-options">
           <button onclick="startCallP2P()">📹 Direct (P2P)</button>
           <button onclick="startCallServer()">🌐 Server Relay</button>
@@ -266,7 +266,7 @@
 
   <script src="/socket.io/socket.io.js"></script>
   <script>
-    let currentUser = null, selectedUser = null, socket = null, currentRoomId = '';
+    let currentUser = null, selectedUser = null, socket = null, currentRoomId = '', currentCallRoomId = '';
     let incomingCallData = null;
     let localStream = null, screenStream = null;
     let peerConnection = null;
@@ -274,8 +274,8 @@
     let sendingScreen = false;
     let isCaller = false;
     let callMode = 'p2p';
-    let serverFrameInterval = null;
-    let serverFrameCanvas = null;
+    let activeCallPeerId = null;
+    let pendingIceCandidates = [];
     const serverUrl = window.location.origin;
     
     const rtcConfig = {
@@ -317,14 +317,6 @@
       document.getElementById('authScreen').style.display = 'none';
       document.getElementById('app').style.display = 'flex';
       
-      const remoteCanvas = document.createElement('canvas');
-      remoteCanvas.id = 'remoteCanvas';
-      remoteCanvas.width = 320;
-      remoteCanvas.height = 240;
-      remoteCanvas.style.display = 'none';
-      document.body.appendChild(remoteCanvas);
-      window.remoteCanvasCtx = remoteCanvas.getContext('2d');
-      
       socket = io();
       socket.on('connect', () => socket.emit('register', currentUser.id));
       socket.on('message', (data) => { if (currentRoomId && currentRoomId === data.roomId && data.senderId !== currentUser.id) addMessage(data.content, data.senderId); });
@@ -337,8 +329,6 @@
       socket.on('peer-toggle-video', handlePeerToggleVideo);
       socket.on('peer-toggle-audio', handlePeerToggleAudio);
       socket.on('peer-screen-share', handlePeerScreenShare);
-      socket.on('video-frame', (data) => handleServerFrame(data));
-      socket.on('server-connected', () => { document.getElementById('callStatus').innerHTML = '<span class="connected">Connected via server</span>'; });
       
       loadUsers();
     }
@@ -347,14 +337,14 @@
       const res = await fetch(`${serverUrl}/api/users`);
       const { users } = await res.json();
       document.getElementById('userList').innerHTML = users.map(u => `
-        <div class="user-item" onclick="selectUser(${u.id}, '${u.displayName}', '${u.username}')">
+        <div class="user-item" onclick="selectUser(event, ${u.id}, '${u.displayName}', '${u.username}')">
           <div class="avatar-wrap"><div class="avatar">${u.displayName[0].toUpperCase()}</div><div class="status-dot"></div></div>
           <div class="user-name">${u.displayName}</div>
-          <button class="user-call-btn" onclick="event.stopPropagation(); startCallToUser(${u.id})" aria-label="Video call ${u.displayName}">📹</button>
+          <button class="user-call-btn" onclick="event.stopPropagation(); startCallToUserP2P(${u.id})" aria-label="Video call ${u.displayName}">📹</button>
         </div>`).join('');
     }
     
-    async function selectUser(userId, displayName, username) {
+    async function selectUser(event, userId, displayName, username) {
       selectedUser = { id: userId, displayName, username };
       document.querySelectorAll('.user-item').forEach(el => el.classList.remove('active'));
       event.target.closest('.user-item').classList.add('active');
@@ -442,8 +432,13 @@
     }
     document.getElementById('msgInput').addEventListener('keypress', (e) => { if (e.key === 'Enter') sendMessage(); });
     
-    function showCallOptions(e) {
-      e.stopPropagation();
+    function showCallOptions(event) {
+      if (!event) return;
+      if (!selectedUser) {
+        showError('Select a user first');
+        return;
+      }
+      event.stopPropagation();
       document.getElementById('callOptions').classList.toggle('show');
     }
     
@@ -466,63 +461,42 @@
     async function startCallToUserServer(userId) {
       isCaller = true;
       callMode = 'server';
-      currentRoomId = `call-server-${[currentUser.id, userId].sort().join('-')}`;
+      activeCallPeerId = userId;
+      currentCallRoomId = `call-server-${[currentUser.id, userId].sort().join('-')}`;
       
       document.getElementById('callStatus').style.display = 'block';
       document.getElementById('callLeft').style.display = 'none';
-      document.getElementById('callStatus').innerHTML = '<span class="status">Connecting via server...</span>';
+      document.getElementById('callStatus').innerHTML = '<span class="status">Connecting with relay...</span>';
       document.getElementById('callOverlay').classList.add('show');
-      document.getElementById('callTitle').textContent = 'Video Call (Server)';
+      document.getElementById('callTitle').textContent = 'Video Call (Relay)';
       
       try {
-        localStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }, audio: { echoCancellation: true, noiseSuppression: true } });
-        document.getElementById('localVideo').srcObject = localStream;
+        await ensureLocalMedia();
       } catch (err) {
         console.error('Media error:', err);
-        endCall();
+        cleanupCall(false);
         return;
       }
+      
+      createPeerConnection(userId);
+      const offer = await peerConnection.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true });
+      await peerConnection.setLocalDescription(offer);
       
       socket.emit('call-user', {
         to: userId,
         from: currentUser.id,
         fromName: currentUser.displayName,
-        roomId: currentRoomId,
-        offer: null,
+        roomId: currentCallRoomId,
+        offer: peerConnection.localDescription,
         mode: 'server'
       });
-      
-      sendServerFrames();
-    }
-    
-    function sendServerFrames() {
-      if (callMode !== 'server' || !localStream) return;
-      
-      const video = document.createElement('video');
-      
-      const sendFrame = () => {
-        const stream = sendingScreen && screenStream ? screenStream : localStream;
-        if (!stream) return;
-        video.srcObject = stream;
-        if (video.readyState >= 2) {
-          const canvas = document.createElement('canvas');
-          canvas.width = 320;
-          canvas.height = 240;
-          const ctx = canvas.getContext('2d');
-          ctx.drawImage(video, 0, 0, 320, 240);
-          const dataUrl = canvas.toDataURL('image/jpeg', 0.5);
-          socket.emit('video-frame', { roomId: currentRoomId, frame: dataUrl });
-        }
-      };
-      
-      sendFrame();
-      serverFrameInterval = setInterval(sendFrame, 100);
     }
     
     async function startCallToUserP2P(userId) {
       isCaller = true;
       callMode = 'p2p';
-      currentRoomId = `call-p2p-${[currentUser.id, userId].sort().join('-')}`;
+      activeCallPeerId = userId;
+      currentCallRoomId = `call-p2p-${[currentUser.id, userId].sort().join('-')}`;
       
       document.getElementById('callStatus').style.display = 'block';
       document.getElementById('callLeft').style.display = 'none';
@@ -531,44 +505,14 @@
       document.getElementById('callTitle').textContent = 'Video Call (P2P)';
       
       try {
-        localStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }, audio: { echoCancellation: true, noiseSuppression: true } });
-        document.getElementById('localVideo').srcObject = localStream;
+        await ensureLocalMedia();
       } catch (err) {
         console.error('Media error:', err);
-        endCall();
+        cleanupCall(false);
         return;
       }
       
-      peerConnection = new RTCPeerConnection(rtcConfig);
-      
-      localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
-      
-      peerConnection.ontrack = (event) => {
-        document.getElementById('remoteVideo').srcObject = event.streams[0];
-      };
-      
-      peerConnection.onicecandidate = (event) => {
-        if (event.candidate) {
-          socket.emit('ice-candidate', {
-            to: userId,
-            roomId: currentRoomId,
-            candidate: event.candidate
-          });
-        }
-      };
-      
-      peerConnection.oniceconnectionstatechange = () => {
-        console.log('ICE state:', peerConnection.iceConnectionState);
-        if (peerConnection.iceConnectionState === 'connected') {
-          document.getElementById('callStatus').innerHTML = '<span class="connected">Connected</span>';
-        } else if (peerConnection.iceConnectionState === 'disconnected' || peerConnection.iceConnectionState === 'failed') {
-          document.getElementById('callStatus').innerHTML = '<span class="status">Connection failed. Retrying...</span>';
-        }
-      };
-      
-      peerConnection.onconnectionstatechange = () => {
-        console.log('Connection state:', peerConnection.connectionState);
-      };
+      createPeerConnection(userId);
       
       const offer = await peerConnection.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true });
       await peerConnection.setLocalDescription(offer);
@@ -577,113 +521,91 @@
         to: userId,
         from: currentUser.id,
         fromName: currentUser.displayName,
-        roomId: currentRoomId,
-        offer: peerConnection.localDescription
+        roomId: currentCallRoomId,
+        offer: peerConnection.localDescription,
+        mode: 'p2p'
       });
     }
     
     async function handleIncomingCall(data) {
-      currentRoomId = data.roomId;
+      currentCallRoomId = data.roomId;
       incomingCallData = data;
       callMode = data.mode || 'p2p';
       document.getElementById('callerName').textContent = data.fromName || 'User';
       document.getElementById('incomingCall').classList.add('show');
-      document.getElementById('callTitle').textContent = callMode === 'server' ? 'Video Call (Server)' : 'Video Call (P2P)';
+      document.getElementById('callTitle').textContent = callMode === 'server' ? 'Video Call (Relay)' : 'Video Call (P2P)';
     }
     
     async function acceptCall() {
       document.getElementById('incomingCall').classList.remove('show');
       
-      const { from, fromName, roomId, offer } = incomingCallData;
-      currentRoomId = roomId;
+      const { from, roomId, offer } = incomingCallData;
+      currentCallRoomId = roomId;
       isCaller = false;
+      activeCallPeerId = from;
       
       document.getElementById('callStatus').style.display = 'block';
       document.getElementById('callLeft').style.display = 'none';
-      document.getElementById('callStatus').innerHTML = '<span class="connected">Connected</span>';
+      document.getElementById('callStatus').innerHTML = '<span class="status">Connecting...</span>';
       document.getElementById('callOverlay').classList.add('show');
       
       try {
-        localStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }, audio: { echoCancellation: true, noiseSuppression: true } });
-        document.getElementById('localVideo').srcObject = localStream;
+        await ensureLocalMedia();
       } catch (err) {
         console.error('Media error:', err);
-        endCall();
+        cleanupCall(false);
         return;
       }
       
-      peerConnection = new RTCPeerConnection(rtcConfig);
-      
-      localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
-      
-      peerConnection.ontrack = (event) => {
-        document.getElementById('remoteVideo').srcObject = event.streams[0];
-      };
-      
-      peerConnection.onicecandidate = (event) => {
-        if (event.candidate) {
-          socket.emit('ice-candidate', {
-            to: from,
-            roomId: currentRoomId,
-            candidate: event.candidate
-          });
-        }
-      };
-      
-      peerConnection.oniceconnectionstatechange = () => {
-        console.log('ICE state:', peerConnection.iceConnectionState);
-        if (peerConnection.iceConnectionState === 'connected') {
-          document.getElementById('callStatus').innerHTML = '<span class="connected">Connected</span>';
-        } else if (peerConnection.iceConnectionState === 'disconnected' || peerConnection.iceConnectionState === 'failed') {
-          document.getElementById('callStatus').innerHTML = '<span class="status">Connection failed. Retrying...</span>';
-        }
-      };
+      createPeerConnection(from);
       
       await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+      await flushPendingIceCandidates();
       const answer = await peerConnection.createAnswer();
       await peerConnection.setLocalDescription(answer);
       
       socket.emit('accept-call', {
         to: from,
-        roomId: currentRoomId,
-        answer: peerConnection.localDescription,
-        mode: callMode
+        roomId: currentCallRoomId,
+        answer: peerConnection.localDescription
       });
-      
-      if (callMode === 'server') {
-        sendServerFrames();
-      }
       
       incomingCallData = null;
     }
     
     function rejectCall() {
       if (incomingCallData) {
-        socket.emit('reject-call', { to: incomingCallData.from, roomId: currentRoomId });
+        socket.emit('reject-call', { to: incomingCallData.from, roomId: currentCallRoomId });
       }
       document.getElementById('incomingCall').classList.remove('show');
-      endCall();
+      cleanupCall(false);
       incomingCallData = null;
     }
     
     async function handleCallAccepted(data) {
-      document.getElementById('callStatus').innerHTML = '<span class="connected">Connected</span>';
       const { answer } = data;
+      if (!peerConnection || !answer) return;
       await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+      await flushPendingIceCandidates();
+      document.getElementById('callStatus').innerHTML = '<span class="connected">Connected</span>';
     }
     
     function handleCallRejected() {
       showError('Call rejected');
-      endCall();
+      cleanupCall(false);
     }
     
     function handleCallEnded() {
-      endCall();
+      cleanupCall(false);
     }
     
     async function handleIceCandidate(data) {
-      if (peerConnection && data.candidate) {
-        await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+      if (!peerConnection || !data.candidate) return;
+      const candidate = new RTCIceCandidate(data.candidate);
+      if (peerConnection.remoteDescription) {
+        await peerConnection.addIceCandidate(candidate);
+      } else {
+        pendingIceCandidates.push(candidate);
       }
     }
     
@@ -704,30 +626,14 @@
       document.getElementById('remoteVideo').style.border = data.sharing ? '3px solid #23a559' : 'none';
     }
     
-    let serverFrameCanvas = null;
-    function handleServerFrame(data) {
-      if (data.frame && callMode === 'server') {
-        if (!serverFrameCanvas) {
-          serverFrameCanvas = document.createElement('canvas');
-          serverFrameCanvas.width = 320;
-          serverFrameCanvas.height = 240;
-        }
-        const img = new Image();
-        img.onload = () => {
-          const ctx = serverFrameCanvas.getContext('2d');
-          ctx.drawImage(img, 0, 0);
-          document.getElementById('remoteVideo').srcObject = serverFrameCanvas.captureStream(15);
-        };
-        img.src = data.frame;
-      }
-    }
-    
     function toggleVideo() {
       if (!localStream) return;
       videoEnabled = !videoEnabled;
       localStream.getVideoTracks().forEach(t => t.enabled = videoEnabled);
       updateToggleButtons();
-      socket.emit('toggle-video', { roomId: currentRoomId, enabled: videoEnabled, to: selectedUser.id });
+      if (activeCallPeerId) {
+        socket.emit('toggle-video', { enabled: videoEnabled, to: activeCallPeerId });
+      }
     }
     
     function toggleAudio() {
@@ -735,7 +641,9 @@
       audioEnabled = !audioEnabled;
       localStream.getAudioTracks().forEach(t => t.enabled = audioEnabled);
       updateToggleButtons();
-      socket.emit('toggle-audio', { roomId: currentRoomId, enabled: audioEnabled, to: selectedUser.id });
+      if (activeCallPeerId) {
+        socket.emit('toggle-audio', { enabled: audioEnabled, to: activeCallPeerId });
+      }
     }
     
     function updateToggleButtons() {
@@ -763,7 +671,7 @@
           const sender = peerConnection.getSenders().find(s => s.track?.kind === 'video');
           if (sender) {
             const newTrack = localStream.getVideoTracks()[0];
-            sender.replaceTrack(newTrack);
+            await sender.replaceTrack(newTrack);
           }
         }
       } else {
@@ -793,17 +701,87 @@
           if (peerConnection) {
             const sender = peerConnection.getSenders().find(s => s.track?.kind === 'video');
             if (sender) {
-              sender.replaceTrack(screenStream.getVideoTracks()[0]);
+              await sender.replaceTrack(screenStream.getVideoTracks()[0]);
             }
           }
         } catch (err) { console.error('Screen share error:', err); }
       }
-      socket.emit('screen-share', { roomId: currentRoomId, sharing: sendingScreen, to: selectedUser.id });
+      if (activeCallPeerId) {
+        socket.emit('screen-share', { sharing: sendingScreen, to: activeCallPeerId });
+      }
     }
     
     function endCall() {
+      cleanupCall(true);
+    }
+
+    async function ensureLocalMedia() {
+      localStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
+        audio: { echoCancellation: true, noiseSuppression: true }
+      });
+      document.getElementById('localVideo').srcObject = localStream;
+    }
+
+    function createPeerConnection(peerUserId) {
+      pendingIceCandidates = [];
+      if (peerConnection) {
+        peerConnection.close();
+      }
+
+      const config = callMode === 'server'
+        ? { ...rtcConfig, iceTransportPolicy: 'relay' }
+        : rtcConfig;
+
+      peerConnection = new RTCPeerConnection(config);
+
+      localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+
+      peerConnection.ontrack = (event) => {
+        document.getElementById('remoteVideo').srcObject = event.streams[0];
+      };
+
+      peerConnection.onicecandidate = (event) => {
+        if (!event.candidate) return;
+        socket.emit('ice-candidate', {
+          to: peerUserId,
+          roomId: currentCallRoomId,
+          candidate: event.candidate
+        });
+      };
+
+      peerConnection.oniceconnectionstatechange = () => {
+        if (!peerConnection) return;
+        console.log('ICE state:', peerConnection.iceConnectionState);
+        if (peerConnection.iceConnectionState === 'connected' || peerConnection.iceConnectionState === 'completed') {
+          document.getElementById('callStatus').innerHTML = '<span class="connected">Connected</span>';
+        } else if (peerConnection.iceConnectionState === 'disconnected') {
+          document.getElementById('callStatus').innerHTML = '<span class="status">Reconnecting...</span>';
+        } else if (peerConnection.iceConnectionState === 'failed') {
+          document.getElementById('callStatus').innerHTML = '<span class="status">Connection failed</span>';
+        }
+      };
+
+      peerConnection.onconnectionstatechange = () => {
+        if (!peerConnection) return;
+        console.log('Connection state:', peerConnection.connectionState);
+        if (peerConnection.connectionState === 'failed' || peerConnection.connectionState === 'closed') {
+          document.getElementById('callStatus').innerHTML = '<span class="status">Call ended</span>';
+        }
+      };
+    }
+
+    async function flushPendingIceCandidates() {
+      while (pendingIceCandidates.length && peerConnection?.remoteDescription) {
+        const candidate = pendingIceCandidates.shift();
+        await peerConnection.addIceCandidate(candidate);
+      }
+    }
+
+    function cleanupCall(notifyPeer) {
       document.getElementById('callOverlay').classList.remove('show');
       document.getElementById('callStatus').style.display = 'none';
+      document.getElementById('incomingCall').classList.remove('show');
       
       if (peerConnection) {
         peerConnection.close();
@@ -821,27 +799,22 @@
       document.getElementById('localVideo').srcObject = null;
       document.getElementById('remoteVideo').srcObject = null;
       
-      if (serverFrameInterval) {
-        clearInterval(serverFrameInterval);
-        serverFrameInterval = null;
-      }
-      if (serverFrameCanvas) {
-        serverFrameCanvas = null;
-      }
-      
       audioEnabled = true;
       videoEnabled = true;
       sendingScreen = false;
       callMode = 'p2p';
+      pendingIceCandidates = [];
       
       document.getElementById('screenBtn').textContent = '🖥️ Share Screen';
       document.getElementById('screenBtn').classList.remove('sharing');
       updateToggleButtons();
       
-      if (currentRoomId && currentRoomId.startsWith('call-')) {
-        socket.emit('end-call', { roomId: currentRoomId });
+      if (notifyPeer && activeCallPeerId) {
+        socket.emit('end-call', { to: activeCallPeerId, roomId: currentCallRoomId });
       }
-      currentRoomId = '';
+      currentCallRoomId = '';
+      activeCallPeerId = null;
+      incomingCallData = null;
     }
   </script>
 </body>
